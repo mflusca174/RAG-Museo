@@ -6,6 +6,7 @@ import io
 import requests
 from fastapi import FastAPI, File, UploadFile
 from fastapi.responses import StreamingResponse
+from fastapi.responses import Response
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
@@ -42,20 +43,25 @@ def stt_azure(audio_path: str) -> str:
 
 
 def ask_rag(text: str) -> str:
-    resp = requests.post(
-        OWUI_URL,
-        headers={"Authorization": OWUI_API_KEY},
-        json={
-            "model": "musei-rag",
-            "messages": [
-                {"role": "user", "content": text}
-            ]
-        },
-        verify=False
-    )
-    resp.raise_for_status()
-    return resp.json()["choices"][0]["message"]["content"]
 
+        resp = requests.post(
+            OWUI_URL,
+            headers={"Authorization": OWUI_API_KEY},
+            json={
+                "model": "musei-rag",
+                "messages": [
+                    {"role": "user", "content": text}
+                ]
+            },
+            verify=False,
+            timeout=60
+        )
+
+        resp.raise_for_status()
+
+        data = resp.json()
+
+        return data["choices"][0]["message"]["content"]
 
 def tts_azure(text: str) -> bytes:
     ssml = f"""<speak version='1.0' xml:lang='it-IT'>
@@ -81,9 +87,20 @@ async def health():
 
 @app.post("/ask-text")
 async def ask_text(req: TextRequest):
+
     response = ask_rag(req.text)
+
+    print(response)
+
     audio_response = tts_azure(response)
-    return StreamingResponse(io.BytesIO(audio_response), media_type="audio/mpeg")
+
+    return Response(
+        content=audio_response,
+        media_type="audio/mpeg",
+        headers={
+            "Content-Disposition": "inline; filename=response.mp3"
+        }
+    )
 
 @app.post("/ask")
 async def ask(audio: UploadFile = File(...)):
